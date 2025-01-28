@@ -1,3 +1,4 @@
+import os  # Importa el módulo os
 from flask import Flask, render_template, jsonify
 from dotenv import load_dotenv
 import sqlite3
@@ -17,7 +18,7 @@ cg = CoinGeckoAPI()
 
 # URL de Infura para Polygon
 # Cargar la URL de Infura desde el archivo .env
-infura_url = os.getenv('INFURA_URL')
+infura_url = os.getenv('INFURA_URL')  # Aquí es donde se usa os
 web3 = Web3(Web3.HTTPProvider(infura_url))
 
 # Ruta para la página principal
@@ -30,7 +31,29 @@ def home():
     logs = cursor.fetchall()
     conn.close()
 
-    return render_template("index.html", logs=logs)
+    # Obtener los datos del gráfico
+    conn = sqlite3.connect("trading_bot.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT timestamp, price1, price2 FROM prices ORDER BY timestamp DESC LIMIT 100")
+    data = cursor.fetchall()
+    conn.close()
+
+    # Preparar los datos para el gráfico
+    timestamps = [row[0] for row in data]
+    matic_prices = [row[1] for row in data]
+    usdc_prices = [row[2] for row in data]
+
+    # Crear el gráfico con Plotly
+    trace1 = go.Scatter(x=timestamps, y=matic_prices, mode='lines', name='MATIC')
+    trace2 = go.Scatter(x=timestamps, y=usdc_prices, mode='lines', name='USDC')
+
+    layout = go.Layout(title="Precios de MATIC y USDC", xaxis={'title': 'Tiempo'}, yaxis={'title': 'Precio'})
+    fig = go.Figure(data=[trace1, trace2], layout=layout)
+
+    # Convertir el gráfico a HTML
+    graph_html = fig.to_html(full_html=False)
+
+    return render_template("index.html", logs=logs, graph_html=graph_html)
 
 # Ruta para la estrategia de trading
 @app.route("/strategy")
@@ -52,32 +75,6 @@ def strategy():
         ]
     }
     return render_template("strategy.html", strategy=strategy_info)
-
-# Ruta para mostrar los gráficos interactivos de precios
-@app.route("/chart")
-def chart():
-    # Obtener los últimos 100 datos de la base de datos para el gráfico
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT timestamp, price1, price2 FROM prices ORDER BY timestamp DESC LIMIT 100")
-    data = cursor.fetchall()
-    conn.close()
-
-    # Preparar los datos para el gráfico
-    timestamps = [row[0] for row in data]
-    matic_prices = [row[1] for row in data]
-    usdc_prices = [row[2] for row in data]
-
-    # Crear el gráfico con Plotly
-    trace1 = go.Scatter(x=timestamps, y=matic_prices, mode='lines', name='MATIC')
-    trace2 = go.Scatter(x=timestamps, y=usdc_prices, mode='lines', name='USDC')
-
-    layout = go.Layout(title="Precios de MATIC y USDC", xaxis={'title': 'Tiempo'}, yaxis={'title': 'Precio'})
-    fig = go.Figure(data=[trace1, trace2], layout=layout)
-
-    # Convertir el gráfico a HTML
-    graph_html = fig.to_html(full_html=False)
-    return render_template("chart.html", graph_html=graph_html)
 
 # Ruta para obtener datos de la base de datos
 @app.route("/data")
