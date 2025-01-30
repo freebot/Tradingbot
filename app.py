@@ -10,7 +10,6 @@ from web3 import Web3
 import plotly.graph_objs as go
 import requests
 import numpy as np
-import tensorflow as tf
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -70,44 +69,8 @@ def fetch_and_store_prices(interval=60):
             print(f"Error fetching or storing prices: {e}")
             time.sleep(30)  # Reintentar después de 30 segundos
 
-# Función para entrenar un modelo de TensorFlow y guardar métricas
-def train_model():
-    while True:
-        try:
-            # Simular datos de entrenamiento
-            x_train = np.random.rand(100, 2)
-            y_train = (x_train[:, 0] + x_train[:, 1] > 1).astype(int)
-
-            # Crear y entrenar el modelo
-            model = tf.keras.Sequential([
-                tf.keras.layers.Dense(16, activation='relu', input_shape=(2,)),
-                tf.keras.layers.Dense(16, activation='relu'),
-                tf.keras.layers.Dense(1, activation='sigmoid')
-            ])
-            model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-            history = model.fit(x_train, y_train, epochs=1, verbose=0)
-
-            # Guardar métricas en la base de datos
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO training_metrics (loss, accuracy, training_time)
-                VALUES (%s, %s, NOW())
-            """, (history.history['loss'][0], history.history['accuracy'][0]))
-            conn.commit()
-            close_db_connection(conn)
-
-            print(f"Métricas guardadas: Loss={history.history['loss'][0]}, Accuracy={history.history['accuracy'][0]}")
-
-            # Esperar el intervalo
-            time.sleep(60)  # Entrenar cada 60 segundos
-        except Exception as e:
-            print(f"Error en entrenamiento: {e}")
-            time.sleep(30)  # Reintentar después de 30 segundos
-
-# Iniciar hilos para obtener precios y entrenar el modelo
+# Iniciar el hilo para obtener y guardar precios
 threading.Thread(target=fetch_and_store_prices, daemon=True).start()
-threading.Thread(target=train_model, daemon=True).start()
 
 # Ruta para la página principal
 @app.route("/")
@@ -136,23 +99,13 @@ def home():
         cursor.execute("SELECT MIN(price2), MAX(price2), AVG(price2) FROM prices")
         usdc_stats = cursor.fetchone()
 
-        # Obtener métricas de entrenamiento
-        cursor.execute("""
-            SELECT loss, accuracy 
-            FROM training_metrics 
-            ORDER BY training_time DESC 
-            LIMIT 10
-        """)
-        training_metrics = cursor.fetchall()
-
         close_db_connection(conn)
 
         return render_template("index.html", 
                             total_records=total_records,
                             last_records=last_records,
                             matic_stats=matic_stats,
-                            usdc_stats=usdc_stats,
-                            training_metrics=training_metrics)
+                            usdc_stats=usdc_stats)
 
     except Exception as e:
         return render_template("error.html", error_message=str(e))
@@ -203,6 +156,51 @@ def strategy():
         return render_template("strategy.html", 
                             bitcoin_price=bitcoin_price,
                             latest_block=latest_block)
+
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
+
+# Ruta para mostrar noticias y sentimiento
+@app.route("/news")
+def news():
+    try:
+        # Obtener noticias de CryptoPanic
+        news_url = "https://cryptopanic.com/api/v1/posts/?auth_token=TU_API_KEY"
+        response = requests.get(news_url)
+        news_data = response.json()
+
+        return render_template("news.html", news_data=news_data)
+
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
+
+# Ruta para mostrar métricas de machine learning
+@app.route("/ml")
+def ml():
+    try:
+        # Simular métricas de un modelo de machine learning
+        ml_metrics = {
+            "accuracy": 0.95,
+            "loss": 0.05,
+            "predictions": [1, 0, 1, 1, 0]  # Ejemplo de predicciones
+        }
+
+        return render_template("ml.html", ml_metrics=ml_metrics)
+
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
+
+# Ruta para mostrar información de liquidez en DEXs
+@app.route("/liquidity")
+def liquidity():
+    try:
+        # Simular datos de pools de liquidez
+        liquidity_data = {
+            "pool1": {"token1": "MATIC", "token2": "USDC", "volume": 1000000},
+            "pool2": {"token1": "ETH", "token2": "USDC", "volume": 500000}
+        }
+
+        return render_template("liquidity.html", liquidity_data=liquidity_data)
 
     except Exception as e:
         return render_template("error.html", error_message=str(e))

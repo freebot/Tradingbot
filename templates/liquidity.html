@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Estrategias - Trading Bot</title>
+    <title>Liquidez - Trading Bot</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
@@ -27,7 +27,7 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/news">Noticias</a>
                     </li>
-                                        <li class="nav-item">
+                    <li class="nav-item">
                         <a class="nav-link" href="/ml">Machine Learning</a>
                     </li>
                     <li class="nav-item">
@@ -39,31 +39,17 @@
     </nav>
 
     <div class="container mt-4">
-        <h1 class="mb-4">Estrategias de Trading</h1>
+        <h1 class="mb-4">Liquidez en DEXs</h1>
 
         <div class="card mb-4">
             <div class="card-body">
-                <h5 class="card-title">Precio de Bitcoin</h5>
-                <p class="card-text">El precio actual de Bitcoin es: ${{ bitcoin_price }}</p>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Último Bloque de Polygon Amoy</h5>
-                <p class="card-text">El último bloque minado es: {{ latest_block }}</p>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Estrategias Implementadas</h5>
+                <h5 class="card-title">Pools de Liquidez</h5>
                 <ul class="list-group list-group-flush">
-                    <li class="list-group-item">Arbitraje Triangular</li>
-                    <li class="list-group-item">Market Making</li>
-                    <li class="list-group-item">Scalping</li>
-                    <li class="list-group-item">Momentum Trading</li>
-                    <li class="list-group-item">Mean Reversion</li>
+                    {% for pool, data in liquidity_data.items() %}
+                    <li class="list-group-item">
+                        <strong>{{ pool }}:</strong> {{ data['token1'] }}/{{ data['token2'] }} - Volumen: ${{ data['volume'] }}
+                    </li>
+                    {% endfor %}
                 </ul>
             </div>
         </div>
@@ -71,5 +57,4 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-</html>o
-
+</html>

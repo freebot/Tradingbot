@@ -24,13 +24,22 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/strategy">Estrategias</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/news">Noticias</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ml">Machine Learning</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/liquidity">Liquidez</a>
+                    </li>
                 </ul>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
-        <h1 class="mb-4">Datos de la Base de Datos</h1>
+        <h1 class="mb-4">Resumen del Mercado</h1>
 
         <div class="card mb-4">
             <div class="card-body">
@@ -92,28 +101,6 @@
                         </ul>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Métricas de Entrenamiento</h5>
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Loss</th>
-                            <th>Accuracy</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for metric in training_metrics %}
-                        <tr>
-                            <td>{{ metric[0] }}</td>
-                            <td>{{ metric[1] }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
             </div>
         </div>
     </div>
