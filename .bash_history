@@ -469,3 +469,46 @@ nano .env
 python app.py
 source venv/bin/activate
 python app.py
+ps -a
+python app.py
+source venv/bin/activate
+python app.py
+ps -a
+kill -9 17090
+rm app.py
+nano app.py
+cd templates
+ls -l
+rm index.html
+nano index.html
+rm chart.html
+nano chart.html
+rm strategy.html
+nano strategy.html
+pip install flask python-dotenv psycopg2-binary pycoingecko web3 plotly
+cd ..
+python3 app.py
+ps -a
+kill -9 17173
+cd templates
+nano base.html
+rm index.html
+nano index.html
+rm chart.html
+nano chart.html
+rm strategy.html
+nano strategy.html
+cd ..
+python3 app.py
+ps -a
+kill -9 17201
+rm app.py
+nano app.py
+git add .
+git commit -m "Tercer commit"
+git push
+python3 app.py
+rm app.py
+nano app.py
+ps -a 
+python3 app.py
