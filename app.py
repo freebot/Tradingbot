@@ -1,131 +1,164 @@
-import os  # Importa el módulo os
+import os
+import time
+import threading
 from flask import Flask, render_template, jsonify
 from dotenv import load_dotenv
-import sqlite3
-import threading
-import time
+import psycopg2
+from psycopg2 import pool
 from pycoingecko import CoinGeckoAPI
 from web3 import Web3
 import plotly.graph_objs as go
+import requests
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
 
 app = Flask(__name__)
 
-# Conexión a la API de CoinGecko
+# Configuración de PostgreSQL
+postgresql_pool = psycopg2.pool.SimpleConnectionPool(
+    1, 20,
+    host=os.getenv('DB_HOST'),
+    database=os.getenv('DB_NAME'),
+    user=os.getenv('DB_USER'),
+    password=os.getenv('DB_PASSWORD'),
+    port=os.getenv('DB_PORT', 5432),
+    sslmode=os.getenv('DB_SSLMODE', 'require')
+)
+
+# Conexión a Infura (o Alchemy/QuickNode)
+infura_url = os.getenv('INFURA_URL')
+web3 = Web3(Web3.HTTPProvider(infura_url))
+
+# Conexión a CoinGecko
 cg = CoinGeckoAPI()
 
-# URL de Infura para Polygon
-# Cargar la URL de Infura desde el archivo .env
-infura_url = os.getenv('INFURA_URL')  # Aquí es donde se usa os
-web3 = Web3(Web3.HTTPProvider(infura_url))
+# Función para obtener una conexión a la base de datos
+def get_db_connection():
+    return postgresql_pool.getconn()
+
+# Función para cerrar una conexión a la base de datos
+def close_db_connection(conn):
+    postgresql_pool.putconn(conn)
+
+# Función para obtener precios de CoinGecko y guardarlos en la base de datos
+def fetch_and_store_prices(interval=60):
+    while True:
+        try:
+            # Obtener precios de CoinGecko
+            prices = cg.get_price(ids='matic-network,usd-coin', vs_currencies='usd')
+            matic_price = prices['matic-network']['usd']
+            usdc_price = prices['usd-coin']['usd']
+
+            # Guardar en la base de datos
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO prices (timestamp, token1, price1, token2, price2)
+                VALUES (NOW(), 'MATIC', %s, 'USDC', %s)
+            """, (matic_price, usdc_price))
+            conn.commit()
+            close_db_connection(conn)
+
+            print(f"Precios guardados: MATIC={matic_price}, USDC={usdc_price}")
+
+            # Esperar el intervalo
+            time.sleep(interval)
+        except Exception as e:
+            print(f"Error fetching or storing prices: {e}")
+            time.sleep(30)  # Reintentar después de 30 segundos
+
+# Iniciar el hilo para obtener y guardar precios
+threading.Thread(target=fetch_and_store_prices, daemon=True).start()
 
 # Ruta para la página principal
 @app.route("/")
 def home():
-    # Obtener los últimos 10 logs de la base de datos
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT message FROM logs ORDER BY timestamp DESC LIMIT 10")
-    logs = cursor.fetchall()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    # Obtener los datos del gráfico
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT timestamp, price1, price2 FROM prices ORDER BY timestamp DESC LIMIT 100")
-    data = cursor.fetchall()
-    conn.close()
+        # Obtener el número total de registros en la tabla prices
+        cursor.execute("SELECT COUNT(*) FROM prices")
+        total_records = cursor.fetchone()[0]
 
-    # Preparar los datos para el gráfico
-    timestamps = [row[0] for row in data]
-    matic_prices = [row[1] for row in data]
-    usdc_prices = [row[2] for row in data]
+        # Obtener los últimos 10 registros de la tabla prices
+        cursor.execute("""
+            SELECT timestamp, token1, price1, token2, price2 
+            FROM prices 
+            ORDER BY timestamp DESC 
+            LIMIT 10
+        """)
+        last_records = cursor.fetchall()
 
-    # Crear el gráfico con Plotly
-    trace1 = go.Scatter(x=timestamps, y=matic_prices, mode='lines', name='MATIC')
-    trace2 = go.Scatter(x=timestamps, y=usdc_prices, mode='lines', name='USDC')
+        # Obtener estadísticas de precios
+        cursor.execute("SELECT MIN(price1), MAX(price1), AVG(price1) FROM prices")
+        matic_stats = cursor.fetchone()
 
-    layout = go.Layout(title="Precios de MATIC y USDC", xaxis={'title': 'Tiempo'}, yaxis={'title': 'Precio'})
-    fig = go.Figure(data=[trace1, trace2], layout=layout)
+        cursor.execute("SELECT MIN(price2), MAX(price2), AVG(price2) FROM prices")
+        usdc_stats = cursor.fetchone()
 
-    # Convertir el gráfico a HTML
-    graph_html = fig.to_html(full_html=False)
+        close_db_connection(conn)
 
-    return render_template("index.html", logs=logs, graph_html=graph_html)
+        return render_template("index.html", 
+                            total_records=total_records,
+                            last_records=last_records,
+                            matic_stats=matic_stats,
+                            usdc_stats=usdc_stats)
 
-# Ruta para la estrategia de trading
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
+
+# Ruta para mostrar gráficos
+@app.route("/chart")
+def chart():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Obtener datos para el gráfico de precios
+        cursor.execute("""
+            SELECT timestamp, price1, price2 
+            FROM prices 
+            ORDER BY timestamp DESC 
+            LIMIT 100
+        """)
+        chart_data = cursor.fetchall()
+        timestamps = [row[0] for row in chart_data]
+        price1 = [row[1] for row in chart_data]
+        price2 = [row[2] for row in chart_data]
+
+        close_db_connection(conn)
+
+        # Crear gráficos con Plotly
+        price1_trace = go.Scatter(x=timestamps, y=price1, mode='lines', name='Precio MATIC')
+        price2_trace = go.Scatter(x=timestamps, y=price2, mode='lines', name='Precio USDC')
+        layout = go.Layout(title='Gráfico de Precios', xaxis={'title': 'Fecha'}, yaxis={'title': 'Precio'})
+        chart_fig = go.Figure(data=[price1_trace, price2_trace], layout=layout)
+        chart_html = chart_fig.to_html(full_html=False)
+
+        return render_template("chart.html", chart_html=chart_html)
+
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
+
+# Ruta para mostrar estrategias
 @app.route("/strategy")
 def strategy():
-    # Detalles sobre la estrategia de trading
-    strategy_info = {
-        "title": "Estrategia de Trading Pairs",
-        "description": """
-            Esta estrategia de trading utiliza dos tokens (por ejemplo, MATIC y USDC) para identificar
-            oportunidades de compra o venta en función de la relación de precios entre ambos tokens.
-            El bot compara los precios de MATIC y USDC en tiempo real y, basándose en reglas predefinidas,
-            decide cuándo ejecutar una operación de compra o venta.
-        """,
-        "steps": [
-            "Paso 1: Obtener precios de MATIC y USDC desde CoinGecko.",
-            "Paso 2: Evaluar la relación de precios entre MATIC y USDC.",
-            "Paso 3: Tomar decisiones de compra o venta en función de las condiciones del mercado.",
-            "Paso 4: Ejecutar la operación de acuerdo con los resultados del análisis."
-        ]
-    }
-    return render_template("strategy.html", strategy=strategy_info)
+    try:
+        # Obtener datos de CoinGecko (ejemplo: precio de Bitcoin)
+        bitcoin_price = cg.get_price(ids='bitcoin', vs_currencies='usd')['bitcoin']['usd']
 
-# Ruta para obtener datos de la base de datos
-@app.route("/data")
-def get_data():
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT timestamp, token1, price1, token2, price2 FROM prices ORDER BY timestamp DESC LIMIT 100")
-    data = cursor.fetchall()
-    conn.close()
-    return jsonify(data)
+        # Obtener el último bloque de Ethereum desde Infura
+        latest_block = web3.eth.block_number
 
+        return render_template("strategy.html", 
+                            bitcoin_price=bitcoin_price,
+                            latest_block=latest_block)
 
-# Función para actualizar los datos
-def update_data():
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
+    except Exception as e:
+        return render_template("error.html", error_message=str(e))
 
-    while True:
-        try:
-            # Obtener precios de CoinGecko para MATIC y USDC
-            precios_matic = cg.get_price(ids='matic-network', vs_currencies='usd')
-            precios_usdc = cg.get_price(ids='usd-coin', vs_currencies='usd')
-
-            # Extraer los precios de las respuestas
-            precio_matic = precios_matic['matic-network']['usd']
-            precio_usdc = precios_usdc['usd-coin']['usd']
-
-            # Actualizar la base de datos con los precios obtenidos
-            cursor.execute("""
-                INSERT INTO prices (token1, token2, price1, price2)
-                VALUES ('MATIC', 'USDC', ?, ?)
-            """, (precio_matic, precio_usdc))
-            conn.commit()
-
-            print(f"Datos actualizados: MATIC={precio_matic} USDC={precio_usdc}")
-
-        except Exception as e:
-            print(f"Error al actualizar datos: {e}")
-
-        time.sleep(60)  # Esperar 1 minuto antes de la siguiente actualización
-
-
-def log_message(message):
-    # Insertar mensaje de log en la base de datos
-    conn = sqlite3.connect("trading_bot.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO logs (message) VALUES (?)", (message,))
-    conn.commit()
-    conn.close()
-
-# Iniciar el hilo para actualizar los datos en segundo plano
+# Iniciar el servidor
 if __name__ == "__main__":
-    threading.Thread(target=update_data, daemon=True).start()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)
