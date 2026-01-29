@@ -3,8 +3,8 @@ import time
 import threading
 from flask import Flask, render_template, jsonify
 from dotenv import load_dotenv
-import psycopg2
-from psycopg2 import pool
+import sqlite3
+from transformers import pipeline
 from pycoingecko import CoinGeckoAPI
 from web3 import Web3
 import plotly.graph_objs as go
@@ -17,30 +17,35 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configuración de PostgreSQL
-postgresql_pool = psycopg2.pool.SimpleConnectionPool(
-    1, 20,
-    host=os.getenv('DB_HOST'),
-    database=os.getenv('DB_NAME'),
-    user=os.getenv('DB_USER'),
-    password=os.getenv('DB_PASSWORD'),
-    port=os.getenv('DB_PORT', 5432),
-    sslmode=os.getenv('DB_SSLMODE', 'require')
-)
+# Configuración de SQLite
+DB_NAME = "trading_bot.db"
+
+# Inicializar modelo de Hugging Face (Análisis de sentimiento)
+# Usamos un modelo específico para finanzas si es posible, o uno general
+print("Cargando modelo de Hugging Face...")
+sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+print("Modelo cargado.")
 
 # Configurar Web3 con Alchemy
 alchemy_url = os.getenv('ALCHEMY_URL')
-web3 = Web3(Web3.HTTPProvider(alchemy_url))
+if alchemy_url:
+    web3 = Web3(Web3.HTTPProvider(alchemy_url))
+else:
+    print("Advertencia: ALCHEMY_URL no configurado. La funcionalidad Web3 estará desactivada.")
+    web3 = None
 
 # Conexión a CoinGecko
 cg = CoinGeckoAPI()
 
 # Función para obtener una conexión a la base de datos
 def get_db_connection():
-    return postgresql_pool.getconn()
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row  # Para acceder a columnas por nombre
+    return conn
 
 # Función para cerrar una conexión a la base de datos
 def close_db_connection(conn):
-    postgresql_pool.putconn(conn)
+    conn.close()
 
 # Función para obtener precios de CoinGecko y guardarlos en la base de datos
 def fetch_and_store_prices(interval=60):
@@ -56,7 +61,7 @@ def fetch_and_store_prices(interval=60):
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO prices (timestamp, token1, price1, token2, price2)
-                VALUES (NOW(), 'MATIC', %s, 'USDC', %s)
+                VALUES (datetime('now'), 'MATIC', ?, 'USDC', ?)
             """, (matic_price, usdc_price))
             conn.commit()
             close_db_connection(conn)
@@ -151,7 +156,10 @@ def strategy():
         bitcoin_price = cg.get_price(ids='bitcoin', vs_currencies='usd')['bitcoin']['usd']
 
         # Obtener el último bloque de Polygon Amoy desde Alchemy
-        latest_block = web3.eth.block_number
+        if web3 and web3.is_connected():
+            latest_block = web3.eth.block_number
+        else:
+            latest_block = "No disponible (configura ALCHEMY_URL)"
 
         return render_template("strategy.html", 
                             bitcoin_price=bitcoin_price,
@@ -165,9 +173,13 @@ def strategy():
 def news():
     try:
         # Obtener noticias de CryptoPanic
-        news_url = "https://cryptopanic.com/api/v1/posts/?auth_token=TU_API_KEY"
+        api_key = os.getenv('CRYPTOPANIC_API_KEY', 'TU_API_KEY')
+        news_url = f"https://cryptopanic.com/api/v1/posts/?auth_token={api_key}"
         response = requests.get(news_url)
-        news_data = response.json()
+        if response.status_code == 200:
+            news_data = response.json()
+        else:
+            news_data = {"error": "No se pudieron obtener noticias (Verifica tu API KEY)"}
 
         return render_template("news.html", news_data=news_data)
 
@@ -179,11 +191,22 @@ def news():
 def ml():
     try:
         # Simular métricas de un modelo de machine learning
+        # Usar Hugging Face para analizar sentimiento de textos de ejemplo (o noticias reales si se implementa)
+        examples = [
+            "Bitcoin is soaring to new heights!",
+            "Regulation concerns cause market drop.",
+            "Polygon network sees massive adoption."
+        ]
+        
+        predictions = sentiment_analyzer(examples)
+        
         ml_metrics = {
-            "accuracy": 0.95,
-            "loss": 0.05,
-            "predictions": [1, 0, 1, 1, 0]  # Ejemplo de predicciones
+            "model_name": "distilbert-base-uncased-finetuned-sst-2-english",
+            "examples": list(zip(examples, predictions))
         }
+
+        # ml_metrics formateado para el template
+        # predictions es una lista de diccionarios [{'label': 'POSITIVE', 'score': 0.99}, ...]
 
         return render_template("ml.html", ml_metrics=ml_metrics)
 
@@ -207,4 +230,4 @@ def liquidity():
 
 # Iniciar el servidor
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5001, debug=False)

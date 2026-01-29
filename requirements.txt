@@ -1,0 +1,9 @@
+flask
+python-dotenv
+pycoingecko
+web3
+plotly
+requests
+numpy
+transformers
+torch

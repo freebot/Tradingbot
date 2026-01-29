@@ -45,18 +45,21 @@
             <div class="card-body">
                 <h5 class="card-title">Métricas del Modelo</h5>
                 <ul class="list-group list-group-flush">
-                    <li class="list-group-item">Precisión: {{ ml_metrics['accuracy'] }}</li>
-                    <li class="list-group-item">Pérdida: {{ ml_metrics['loss'] }}</li>
+                    <li class="list-group-item">Modelo: {{ ml_metrics['model_name'] }}</li>
+                    <li class="list-group-item">Tarea: Análisis de Sentimiento (Hugging Face)</li>
                 </ul>
             </div>
         </div>
 
         <div class="card mb-4">
             <div class="card-body">
-                <h5 class="card-title">Predicciones Recientes</h5>
+                <h5 class="card-title">Análisis de Ejemplo</h5>
                 <ul class="list-group list-group-flush">
-                    {% for prediction in ml_metrics['predictions'] %}
-                    <li class="list-group-item">Predicción: {{ prediction }}</li>
+                    {% for text, prediction in ml_metrics['examples'] %}
+                    <li class="list-group-item">
+                        <strong>Texto:</strong> "{{ text }}"<br>
+                        <strong>Sentimiento:</strong> {{ prediction['label'] }} (Confianza: {{ "%.2f"|format(prediction['score']) }})
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
